@@ -1,0 +1,300 @@
+import numpy as np
+from langdetect import detect
+import string
+import pandas as pd
+import math
+import spacy
+import re
+import unicodedata
+import contractions
+from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.corpus import stopwords
+
+
+try:
+    nlp_en = spacy.load("en_core_web_md")
+except Exception as e:
+    print("Please install the spaCy English model: en_core_web_sm")
+try:
+    nlp_de = spacy.load("de_core_news_md")
+except Exception as e:
+    print("Please install the spaCy German model: de_core_news_sm")
+
+
+def extract_all_text_features(text_series, lang='en'):
+    """
+    Extract comprehensive text features including both basic metrics and advanced readability scores.
+
+    Parameters:
+    -----------
+    text_series : pandas.Series()
+        Series containing text data
+    lang : str, default='en'
+        Language model to use ('en' or 'de')
+
+    Returns:
+    --------
+    pandas.DataFrame()
+        DataFrame with all text features
+    """
+    # Initialize the DataFrame to store all features
+    features_df = pd.DataFrame(index=text_series.index)
+    
+    # Load appropriate spaCy model
+    try:
+        if lang == 'en':
+            nlp = spacy.load("en_core_web_md")
+        elif lang == 'de':
+            nlp = spacy.load("de_core_news_sm")
+        else:
+            nlp = spacy.load("en_core_web_md")
+    except OSError:
+        print(f"spaCy model for language '{lang}' not found. Installing fallback model...")
+        from spacy.cli import download
+        try:
+            download("en_core_web_md")
+            nlp = spacy.load("en_core_web_md")
+        except:
+            print("Failed to download model. Using blank model instead.")
+            nlp = spacy.blank("en")
+    
+    text_series = text_series.fillna("")
+    # Basic text features
+    features_df['feat_text_length'] = text_series.str.len().fillna(0)
+    features_df['feat_word_count'] = text_series.apply(lambda x: len(str(x).split()) if len(x) > 2 else 0)
+    features_df['feat_unique_word_count'] = text_series.apply(lambda x: len(set(str(x).split())) if len(x) > 2 else 0)
+    features_df['feat_avg_word_length'] = text_series.apply(
+        lambda x: np.mean([len(w) for w in str(x).split()]) if len(str(x).split()) > 1 else 0
+    )
+    
+    # Character-level features
+    features_df['feat_char_count_no_spaces'] = text_series.apply(
+        lambda x: sum(1 for char in str(x) if char not in [' ', '\t', '\n'])
+    )
+    
+    # Additional basic features
+    features_df['feat_word_density'] = features_df['feat_word_count'] / features_df['feat_text_length'].replace(0, 1)
+    features_df['feat_unique_word_ratio'] = features_df['feat_unique_word_count'] / features_df[
+        'feat_word_count'].replace(0, 1)
+    
+    # Process each text for advanced readability metrics
+    for idx, text in text_series.items():
+        # Skip empty texts
+        if not text or not isinstance(text, str) or text.strip() == "":
+            continue
+        
+        # Process with spaCy
+        doc = nlp(text)
+        
+        # Count words, sentences, syllables, characters, and complex words
+        word_count = sum(1 for token in doc if not token.is_punct and not token.is_space)
+        sentence_count = len(list(doc.sents))
+        punctuations_count = sum(1 for token in doc if token.is_punct)
+        if punctuations_count is None or pd.isna(punctuations_count):
+            print(11)
+        # Skip if no words or sentences
+        if word_count == 0 or sentence_count == 0:
+            continue
+        
+        # Count syllables and complex words
+        syllable_count = 0
+        complex_word_count = 0  # Words with 3+ syllables
+        verb_counts = 0
+        
+        for token in doc:
+            if token.is_punct or token.is_space:
+                continue
+            if token.pos_ == 'VERB':
+                verb_counts += 1
+            
+            word = token.text.lower()
+            
+            # Count syllables (English-specific approximation)
+            if lang == 'en':
+                # Remove non-alphabetic characters
+                word = re.sub(r'[^a-zA-Z]', '', word)
+                
+                # Count syllables based on vowel sequences
+                count = 0
+                vowels = "aeiouy"
+                
+                # Special cases
+                if word.endswith('e'):
+                    word = word[:-1]
+                
+                if word.endswith('le') and len(word) > 2 and word[-3] not in vowels:
+                    count += 1
+                
+                # Count vowel sequences
+                prev_is_vowel = False
+                for char in word:
+                    is_vowel = char in vowels
+                    if is_vowel and not prev_is_vowel:
+                        count += 1
+                    prev_is_vowel = is_vowel
+                
+                # Ensure at least one syllable per word
+                if count == 0 and len(word) > 0:
+                    count = 1
+                
+                syllable_count += count
+                
+                # Complex words (3+ syllables)
+                if count >= 3:
+                    complex_word_count += 1
+            else:
+                # For non-English languages, use a simpler approximation
+                syllable_count += max(1, len(re.findall(r'[aeiouäöüáéíóúàèìòù]+', word)))
+                if len(re.findall(r'[aeiouäöüáéíóúàèìòù]+', word)) >= 3:
+                    complex_word_count += 1
+        
+        # Character count (excluding spaces)
+        char_count = sum(len(token.text) for token in doc if not token.is_space)
+        
+        # Add sentence count and syllable count as features
+        features_df.loc[idx, 'feat_sentence_count'] = sentence_count
+        features_df.loc[idx, 'feat_syllable_count'] = syllable_count
+        features_df.loc[idx, "feat_verb_counts"] = verb_counts
+        features_df.loc[idx, 'feat_punctuations_count'] = punctuations_count
+        features_df.loc[idx, 'feat_complex_word_count'] = complex_word_count
+        features_df.loc[idx, 'feat_syllables_per_word'] = syllable_count / word_count
+        features_df.loc[idx, 'feat_words_per_sentence'] = word_count / sentence_count
+        
+        # Calculate average values
+        words_per_sentence = word_count / sentence_count
+        syllables_per_word = syllable_count / word_count
+        chars_per_word = char_count / word_count
+        
+        # Calculate readability scores
+        
+        # 1. Flesch Reading Ease Score
+        flesch_reading_ease = 206.835 - (1.015 * words_per_sentence) - (84.6 * syllables_per_word)
+        flesch_reading_ease = max(0, min(100, flesch_reading_ease))  # Clamp to 0-100
+        features_df.loc[idx, 'feat_flesch_reading_ease'] = round(flesch_reading_ease, 2)
+        
+        # 2. Flesch-Kincaid Grade Level
+        flesch_kincaid_grade = (0.39 * words_per_sentence) + (11.8 * syllables_per_word) - 15.59
+        flesch_kincaid_grade = max(0, flesch_kincaid_grade)  # Ensure non-negative
+        features_df.loc[idx, 'feat_flesch_kincaid_grade'] = round(flesch_kincaid_grade, 2)
+        
+        # 3. Gunning Fog Index
+        gunning_fog = 0.4 * (words_per_sentence + 100 * (complex_word_count / word_count))
+        features_df.loc[idx, 'feat_gunning_fog'] = round(gunning_fog, 2)
+        
+        # 4. SMOG Index
+        if sentence_count >= 30:
+            smog_index = 1.043 * math.sqrt(complex_word_count * (30 / sentence_count)) + 3.1291
+        else:
+            # Adjusted formula for texts with fewer than 30 sentences
+            smog_index = 1.043 * math.sqrt(complex_word_count * (30 / max(1, sentence_count))) + 3.1291
+        features_df.loc[idx, 'feat_smog_index'] = round(smog_index, 2)
+        
+        # 5. Coleman-Liau Index
+        l = (char_count / word_count) * 100  # Average number of characters per 100 words
+        s = (sentence_count / word_count) * 100  # Average number of sentences per 100 words
+        coleman_liau_index = max(0.0588 * l - 0.296 * s - 15.8, 0)
+        features_df.loc[idx, 'feat_coleman_liau_index'] = round(coleman_liau_index, 2)
+        
+        # 6. Automated Readability Index (ARI)
+        automated_readability_index = 4.71 * chars_per_word + 0.5 * words_per_sentence - 21.43
+        automated_readability_index = max(0, automated_readability_index)  # Ensure non-negative
+        features_df.loc[idx, 'feat_automated_readability_index'] = round(automated_readability_index, 2)
+        
+        # 7. Dale-Chall Readability Formula (simplified version)
+        dale_chall_readability = 0.1579 * (complex_word_count / word_count * 100) + 0.0496 * words_per_sentence
+        if complex_word_count / word_count > 0.05:
+            dale_chall_readability += 3.6365  # Adjustment for texts with many complex words
+        features_df.loc[idx, 'feat_dale_chall_readability'] = round(dale_chall_readability, 2)
+    
+    # Fill NaN values with appropriate defaults
+    readability_columns = [
+            'feat_flesch_reading_ease', 'feat_flesch_kincaid_grade', 'feat_gunning_fog', 'feat_smog_index',
+            'feat_coleman_liau_index', 'feat_automated_readability_index', 'feat_dale_chall_readability',
+            'feat_sentence_count', 'feat_syllable_count', 'feat_complex_word_count', 'feat_syllables_per_word',
+            'feat_words_per_sentence'
+    ]
+    
+    for col in readability_columns:
+        if col in features_df.columns:
+            features_df[col] = features_df[col].fillna(0)
+    
+    return features_df.fillna(0)
+
+
+# Emoji pattern
+def remove_emojis(text):
+    emoji_pattern = re.compile("["
+                               u"\U0001F600-\U0001F64F"  # emoticons
+                               u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+                               u"\U0001F680-\U0001F6FF"  # transport & map symbols
+                               u"\U0001F700-\U0001F77F"  # alchemical symbols
+                               u"\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
+                               u"\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
+                               u"\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
+                               u"\U0001FA00-\U0001FA6F"  # Chess Symbols
+                               u"\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
+                               u"\U00002702-\U000027B0"  # Dingbats
+                               u"\U000024C2-\U0001F251"  # Enclosed characters
+                               "]+", flags=re.UNICODE)
+    return emoji_pattern.sub(r'', text)
+
+
+# Remove accents
+def remove_accents(text):
+    return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
+
+
+# Text preprocessing function
+def preprocess_text(text):
+    text = text.lower()
+    
+    # Remove emojis
+    text = remove_emojis(text)
+    
+    # Remove accents
+    text = remove_accents(text)
+    
+    # Expand contractions (e.g., "I've" -> "I have")
+    text = contractions.fix(text)
+    
+    # Remove punctuations
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    
+    # Remove digits
+    text = re.sub(r'\d+', '', text)
+    
+    # Remove excessive whitespaces, newlines, and tabs
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    # Detect language
+    try:
+        language = detect(text)
+    except Exception:
+        language = 'en'  # Default to English if detection fails
+    
+    # Tokenization based on language
+    if language == 'en':
+        tokens = word_tokenize(text)
+        nlp = nlp_en
+    elif language == 'de':
+        tokens = word_tokenize(text)
+        nlp = nlp_de
+    else:
+        tokens = text.split()  # Fallback for unsupported languages
+    
+    # Remove stopwords before lemmatization
+    stop_words = set(stopwords.words('german') if language == 'de' else stopwords.words('english'))
+    tokens = [word.lower() for word in tokens if word.lower() not in stop_words]
+    if language in ("en", "de"):
+        # Lemmatization using spaCy
+        doc = nlp(' '.join(tokens))
+        tokens = [token.lemma_ for token in doc]
+    
+    return " ".join(tokens)
+
+
+if __name__ == '__main__':
+    
+    # Example usage
+    text = "I've been to Paris! It's amazing! 🗼✨\n\nSo many places to visit..."
+    print(preprocess_text(text))
