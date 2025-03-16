@@ -1,3 +1,6 @@
+import pandas as pd
+
+
 def multiply_plans_by_value(plan):
     if pd.isna(plan):
         return 0

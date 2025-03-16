@@ -1,3 +1,4 @@
+import nltk
 import numpy as np
 from langdetect import detect
 import string
@@ -11,14 +12,36 @@ from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
 
 
-try:
-    nlp_en = spacy.load("en_core_web_md")
-except Exception as e:
-    print("Please install the spaCy English model: en_core_web_sm")
-try:
-    nlp_de = spacy.load("de_core_news_md")
-except Exception as e:
-    print("Please install the spaCy German model: de_core_news_sm")
+def check_and_download_punkt_tab():
+    resource = 'tokenizers/punkt/PY3_tab'
+    try:
+        nltk.data.find(resource)
+    except LookupError:
+        print(f"Resource '{resource}' not found. Downloading now...")
+        nltk.download('punkt_tab')
+        print("Download complete.")
+
+
+def check_and_download_spacy_models():
+    try:
+        nlp_en = spacy.load("en_core_web_trf")
+    except Exception as e:
+        from spacy.cli import download
+        download("en_core_web_trf")
+        nlp_en = spacy.load("en_core_web_trf")
+
+    try:
+        nlp_de = spacy.load("de_dep_news_trf")
+    except Exception as e:
+        from spacy.cli import download
+        download("de_dep_news_trf")
+        nlp_de = spacy.load("de_dep_news_trf")
+
+    return nlp_en, nlp_de
+
+
+check_and_download_punkt_tab()
+nlp_en, nlp_de = check_and_download_spacy_models()
 
 
 def extract_all_text_features(text_series, lang='en'):
@@ -77,6 +100,11 @@ def extract_all_text_features(text_series, lang='en'):
     features_df['feat_unique_word_ratio'] = features_df['feat_unique_word_count'] / features_df[
         'feat_word_count'].replace(0, 1)
     
+    features_df['feat_char_count_no_spaces'] = np.log1p(features_df['feat_char_count_no_spaces'])
+    features_df['feat_avg_word_length'] = np.log1p(features_df['feat_avg_word_length'])
+    features_df['feat_unique_word_count'] = np.log1p(features_df['feat_unique_word_count'])
+    features_df['feat_text_length'] = np.log1p(features_df['feat_text_length'])
+    features_df['feat_word_count'] = np.log1p(features_df['feat_word_count'])
     # Process each text for advanced readability metrics
     for idx, text in text_series.items():
         # Skip empty texts
@@ -218,6 +246,10 @@ def extract_all_text_features(text_series, lang='en'):
         if col in features_df.columns:
             features_df[col] = features_df[col].fillna(0)
     
+    features_df['feat_punctuations_count'] = np.log1p(features_df['feat_punctuations_count'])
+    features_df['feat_verb_counts'] = np.log1p(features_df['feat_verb_counts'])
+    features_df['feat_syllable_count'] = np.log1p(features_df['feat_syllable_count'])
+    features_df['feat_complex_word_count'] = np.log1p(features_df['feat_complex_word_count'])
     return features_df.fillna(0)
 
 
@@ -273,15 +305,13 @@ def preprocess_text(text):
         language = 'en'  # Default to English if detection fails
     
     # Tokenization based on language
-    if language == 'en':
-        tokens = word_tokenize(text)
-        nlp = nlp_en
-    elif language == 'de':
+    if language == 'de':
         tokens = word_tokenize(text)
         nlp = nlp_de
     else:
-        tokens = text.split()  # Fallback for unsupported languages
-    
+        tokens = word_tokenize(text)
+        nlp = nlp_en
+        
     # Remove stopwords before lemmatization
     stop_words = set(stopwords.words('german') if language == 'de' else stopwords.words('english'))
     tokens = [word.lower() for word in tokens if word.lower() not in stop_words]

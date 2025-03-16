@@ -2,12 +2,20 @@ import re
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder
+from Logger.LoggingGenerator import Logger
+import os
+
+logger = Logger(os.path.basename(__file__).split('.')[0]).get_logger()
 
 
-def preprocess_is_meeting_with_advisor(dataframe):
+def jc_advisor_status_features(dataframe):
+    logger.debug("Processing advisor meeting data.")
     imputing_cond = dataframe['in_contact_with_job_advisor'].isin([np.nan,'03.07.2024'])
     in_contact_ser = dataframe['in_contact_with_job_advisor']
     dataframe['feat_in_contact_with_job_advisor'] = np.where(imputing_cond, 'not specified', in_contact_ser)
+    
+    dataframe['feat_registered_with_the_jobcenter'] = dataframe['registered_with_the_jobcenter'].apply(
+        preprocess_registered_with_the_jobcenter)
     
     return dataframe
 
