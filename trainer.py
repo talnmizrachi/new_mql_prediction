@@ -1,6 +1,17 @@
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+from training_functions.balancing_data import balance_dataset
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from catboost import CatBoostClassifier, Pool
+from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.preprocessing import LabelEncoder
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
+from collections import Counter
+import warnings
 
 from datetime import timedelta
 from catboost import CatBoostClassifier, Pool, CatBoostRegressor
@@ -299,66 +310,28 @@ sorted_funnel = {
     
 }
 
-import pandas as pd
-import matplotlib.pyplot as plt
-
-# 1. Convert mql_date to datetime (if not already)
-df['mql_date'] = pd.to_datetime(df['mql_date'])
-
 # 2. Create a boolean column indicating whether row is "requested"
 df['is_requested'] = df['requested_bg'].eq('requested')
-
-# 3. Group by month (using dt.to_period('M')) and calculate mean (which is the rate)
-monthly_requested = (
-        df
-        .groupby(df['mql_date'].dt.to_period('M'))['is_requested']
-        .mean()  # proportion that are requested in that month
-)
-
-# 4. Convert the PeriodIndex to a Timestamp so it can be plotted easily
-monthly_requested.index = monthly_requested.index.to_timestamp()
-
-# 5. Plot (as a line chart). For a bar chart, use kind='bar'
-monthly_requested.plot(kind='line', marker='o', figsize=(10, 3))
-plt.title('Monthly Rate of "Requested"')
-plt.xlabel('Month')
-plt.ylabel('Proportion Requested')
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.show()
-
-# 3. Group by month (using dt.to_period('M')) and calculate mean (which is the rate)
-monthly_requested = (
-        df
-        .groupby(df['requested_bg_date'].dt.to_period('M'))['is_requested']
-        .sum()  # proportion that are requested in that month
-)
-
-# 4. Convert the PeriodIndex to a Timestamp so it can be plotted easily
-monthly_requested.index = monthly_requested.index.to_timestamp()
-
-# 5. Plot (as a line chart). For a bar chart, use kind='bar'
-monthly_requested.plot(kind='line', marker='o', figsize=(10, 3))
-plt.title('Monthly Rate of "Requested"')
-plt.xlabel('Month')
-plt.ylabel('Proportion Requested')
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.show()
 
 # MQL -> Requested
 
 df['enrolled'] = df['closed_won_deal__program_duration'].notna()
-df['requested_bg'].value_counts()
 
+starting_level = "mql"
 target = 'requested_bg'
-cat_cols = sorted_funnel['mql']['categorical']
-numerical = sorted_funnel['mql']['numerical']
+
+if starting_level == "requested":
+    df = df[df['requested_bg'] == 'requested'].copy()
+if starting_level == "sql":
+    df = df[df['got_sql'] == 'sql'].copy()
+
+cat_cols = sorted_funnel[starting_level]['categorical']
+numerical = sorted_funnel[starting_level]['numerical']
+final_columns = numerical + cat_cols + [target]
 
 for col in cat_cols:
     df[col] = df[col].astype(str)
 
-df['mql_date'] = pd.to_datetime(df['mql_date'])
 cutoff = '2024-11-01'
 start_date = "2023-01-01"
 
@@ -368,15 +341,13 @@ in_contact_with_job_advisor_is_known = (df['in_contact_with_job_advisor'].notna(
 preferred_cohort_is_known = (df['preferred_cohort'].notna())
 lpvariant_is_known = (df['lpvariant'].notna())
 
-conditions = text_cond & highest_level_of_education_is_known & in_contact_with_job_advisor_is_known & preferred_cohort_is_known
-conditions = text_cond & highest_level_of_education_is_known & in_contact_with_job_advisor_is_known
+# conditions = text_cond & highest_level_of_education_is_known & in_contact_with_job_advisor_is_known & preferred_cohort_is_known
+# conditions = text_cond & highest_level_of_education_is_known & in_contact_with_job_advisor_is_known
 # conditions = text_cond & in_contact_with_job_advisor_is_known
-
+conditions = True
 
 future_test = df[(df['mql_date'] >= cutoff) & conditions].copy()
 current_df = df[(df['mql_date'] < cutoff) & (df['mql_date'] >= start_date) & conditions].copy()
-
-final_columns = numerical + cat_cols + [target]
 
 pre_model = current_df.copy()
 pre_model = pre_model[final_columns].copy()
@@ -390,19 +361,6 @@ print(len(pre_model_future), list(pre_model_future[target].value_counts().items(
 # preferred_cohort
 # lpvariant
 
-
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split, StratifiedKFold
-from catboost import CatBoostClassifier, Pool
-from sklearn.metrics import classification_report, roc_auc_score
-from sklearn.preprocessing import LabelEncoder
-from imblearn.over_sampling import RandomOverSampler
-from imblearn.under_sampling import RandomUnderSampler
-from collections import Counter
-import warnings
-
-warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Check the class distribution
 print("Original class distribution:")
@@ -443,71 +401,11 @@ X_train, X_test, y_train_encoded, y_test_encoded = train_test_split(
 print("\nTrain set class distribution:")
 print(Counter(y_train_encoded))
 
-
-# Define balancing strategies
-def balance_with_over_under(X_train, y_train, sampling_strategy_over=0.7, sampling_strategy_under=0.8):
-    """
-    Balance dataset using RandomOverSampler for minority class and RandomUnderSampler for majority class
-    """
-    # First oversample the minority class
-    over = RandomOverSampler(sampling_strategy=sampling_strategy_over, random_state=42)
-    X_over, y_over = over.fit_resample(X_train, y_train)
-    
-    # Then undersample the majority class
-    under = RandomUnderSampler(sampling_strategy=sampling_strategy_under, random_state=42)
-    X_balanced, y_balanced = under.fit_resample(X_over, y_over)
-    
-    return X_balanced, y_balanced
-
-
-def balance_with_undersampling(X_train, y_train, sampling_strategy=0.5):
-    """
-    Simple undersampling of majority class
-    """
-    under = RandomUnderSampler(sampling_strategy=sampling_strategy, random_state=42)
-    X_balanced, y_balanced = under.fit_resample(X_train, y_train)
-    return X_balanced, y_balanced
-
-
-def calculate_class_weights(y_train):
-    """
-    Calculate class weights inversely proportional to class frequencies
-    """
-    class_counts = np.bincount(y_train)
-    total_samples = len(y_train)
-    weights = {i: total_samples / (len(class_counts) * count) for i, count in enumerate(class_counts)}
-    return weights
-
-
-# Choose a balancing strategy (uncomment one approach)
-
-# Strategy 1: Over-sampling + Under-sampling 
-X_balanced, y_balanced = balance_with_over_under(
-    X_train, y_train_encoded,
-    sampling_strategy_over=0.5,
-    sampling_strategy_under=0.6
-)
-
-# X_balanced, y_balanced = balance_with_undersampling(
-#     X_train, y_train_encoded, 
-#     sampling_strategy=0.6
-# )
-
-print("\nUsing Strategy 1: Combined over/under sampling")
-print("Balanced class distribution:", Counter(y_balanced))
-X_balanced = X_train
-y_balanced = y_train_encoded
-
-weights = calculate_class_weights(y_balanced)
-print(weights)
-weights[1] *= 0.8
-print(weights)
+X_balanced, y_balanced, weights = balance_dataset(X_train, y_train_encoded, method="over_under", return_class_weights=True)
 
 # Create CatBoost pools with categorical features
 train_pool = Pool(X_balanced, y_balanced, cat_features=categorical_cols)
 test_pool = Pool(X_test, y_test_encoded, cat_features=categorical_cols)
-
-# Choose one approach for handling class imbalance:
 
 # Approach 1: Use balanced dataset without class weights in model
 model = CatBoostClassifier(
@@ -554,9 +452,9 @@ plt.title('Confusion Matrix')
 plt.show()
 
 # Feature importance
-feature_importances = model.get_feature_importance(train_pool)
+feature_importance = model.get_feature_importance(train_pool)
 feature_names = X.columns
-importance_df = pd.DataFrame({'Feature': feature_names, 'Importance': feature_importances})
+importance_df = pd.DataFrame({'Feature': feature_names, 'Importance': feature_importance})
 importance_df = importance_df.sort_values('Importance', ascending=True).reset_index(drop=True)
 print("\nTop 10 Important Features:")
 importance_df.head(5)
@@ -564,12 +462,12 @@ importance_df.head(5)
 import matplotlib.pyplot as plt
 
 # Get feature importances using the default method (PredictionValuesChange)
-feature_importances = model.get_feature_importance(train_pool)
+feature_importance = model.get_feature_importance(train_pool)
 features = X_train.columns
 
 # Visualize the importances
 plt.figure(figsize=(10, 10))
-plt.barh(features, feature_importances)
+plt.barh(features, feature_importance)
 plt.xlabel("Importance")
 plt.title("CatBoost Feature Importance")
 plt.show()

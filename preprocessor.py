@@ -6,7 +6,7 @@ from features_house.afa_featrues import *
 from features_house.constants_and_maps import language_mapping_dict, education_mapping, location_mapping, \
     work_experience_mapping, states_to_continent_map
 from features_house.marketing_features import preprocess_utm_source, preprocess_utm_medium, \
-    preprocess_mql_hour_minutes_features
+    preprocess_datetime_columns_hour_minutes_features
 from features_house.ms_features import create_success_dict
 from features_house.states_features import generate_states_data
 from features_house.student_features import preprocess_age_ranges, norm_employment, jc_advisor_status_features, \
@@ -294,7 +294,7 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
     df = jc_advisor_status_features(df)
     df = geographical_features(df)
     df = preprocess_visa_status(df)
-    df = preprocess_mql_hour_minutes_features(df, 'mql_date')
+    df = preprocess_datetime_columns_hour_minutes_features(df, 'mql_date')
     df = inferring_features_from_names(df, names_file)
     df = past_experience_features(df)
     df = other_candidate_features(df)

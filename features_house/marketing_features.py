@@ -88,7 +88,7 @@ def preprocess_all_data_ad_name(dataframe):
     return dataframe
 
 
-def preprocess_mql_hour_minutes_features(df, datetime_column, drop_original=True):
+def preprocess_datetime_columns_hour_minutes_features(df, datetime_column, drop_original=True):
     """
     Creates cyclical features from a datetime column and adds a single projection feature.
 
@@ -124,22 +124,24 @@ def preprocess_mql_hour_minutes_features(df, datetime_column, drop_original=True
     # Hour of day (24-hour cycle)
     df_result['hour_sin'] = np.sin(2 * np.pi * df_result['hour'] / 24)
     df_result['hour_cos'] = np.cos(2 * np.pi * df_result['hour'] / 24)
-    df_result['feat_hour_projection'] = (df_result['hour_sin'] + df_result['hour_cos']) / np.sqrt(2)
+    df_result[f'feat_hour_projection_{datetime_column}'] = (df_result['hour_sin'] + df_result['hour_cos']) / np.sqrt(2)
     
     # Day of month (assuming 31 days max)
     df_result['day_sin'] = np.sin(2 * np.pi * df_result['day'] / 31)
     df_result['day_cos'] = np.cos(2 * np.pi * df_result['day'] / 31)
-    df_result['feat_day_projection'] = (df_result['day_sin'] + df_result['day_cos']) / np.sqrt(2)
+    df_result[f'feat_day_projection_{datetime_column}'] = (df_result['day_sin'] + df_result['day_cos']) / np.sqrt(2)
     
     # Month of year (12-month cycle)
     df_result['month_sin'] = np.sin(2 * np.pi * df_result['month'] / 12)
     df_result['month_cos'] = np.cos(2 * np.pi * df_result['month'] / 12)
-    df_result['feat_month_projection'] = (df_result['month_sin'] + df_result['month_cos']) / np.sqrt(2)
+    df_result[f'feat_month_projection_{datetime_column}'] = (df_result['month_sin'] + df_result['month_cos']) / np.sqrt(
+        2)
     
     # Day of week (7-day cycle)
     df_result['day_of_week_sin'] = np.sin(2 * np.pi * df_result['day_of_week'] / 7)
     df_result['day_of_week_cos'] = np.cos(2 * np.pi * df_result['day_of_week'] / 7)
-    df_result['feat_day_of_week_projection'] = (df_result['day_of_week_sin'] + df_result['day_of_week_cos']) / np.sqrt(
+    df_result[f'feat_day_of_week_projection_{datetime_column}'] = (df_result['day_of_week_sin'] + df_result[
+        'day_of_week_cos']) / np.sqrt(
         2)
     
     # Drop intermediate columns if needed
