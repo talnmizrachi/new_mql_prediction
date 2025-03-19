@@ -4,11 +4,12 @@ import matplotlib.pyplot as plt
 import shap
 
 
-def plot_catboost_feature_importances(model, train_pool, n=10, figsize=(10, 10)):
+def plot_catboost_feature_importances(model, train_pool, n=10, figsize=(10, 10), file_name=None):
     """
     Retrieve, print, and plot feature importances from a CatBoost model using a given training Pool.
 
     Parameters:
+        file_name:
         model : CatBoost model
             The trained CatBoost model.
 
@@ -51,15 +52,18 @@ def plot_catboost_feature_importances(model, train_pool, n=10, figsize=(10, 10))
     plt.barh(feature_names, feature_importances)
     plt.xlabel("Importance")
     plt.title("CatBoost Feature Importance")
-    plt.show()
-    
+
+    # Save or show the plot
+    if file_name:
+        plt.savefig(f"images/{file_name}.png", bbox_inches='tight')
+        print(f"Confusion matrix saved to {file_name}")
+    else:
+        plt.show()
+
     return importance_df
 
 
-
-
-
-def plot_catboost_shap(model, train_pool, plot_type='beeswarm', max_display=10, figsize=(10, 10)):
+def plot_catboost_shap(model, train_pool, X_train, max_display=25, figsize=(10, 10), save_path_beeswarm=None, save_path_bar=None):
     """
     Compute and plot SHAP values for a CatBoost model using a given training Pool.
 
@@ -70,16 +74,20 @@ def plot_catboost_shap(model, train_pool, plot_type='beeswarm', max_display=10, 
         train_pool : Pool
             The CatBoost Pool used for training; it should include feature names.
 
-        plot_type : str, default 'beeswarm'
-            Type of SHAP plot to display. Options:
-                - 'beeswarm': Displays the typical SHAP beeswarm plot.
-                - 'bar': Displays a bar plot summarizing the mean absolute SHAP values.
+        X_train : pd.DataFrame or np.ndarray
+            The original feature matrix (including categorical features).
 
         max_display : int, default 10
             Maximum number of features to display in the bar plot summary.
 
         figsize : tuple, default (10, 10)
             Figure size for the plot.
+
+        save_path_beeswarm : str, optional
+            If provided, saves the beeswarm plot to the specified path.
+
+        save_path_bar : str, optional
+            If provided, saves the bar plot to the specified path.
 
     Returns:
         shap_values : np.ndarray
@@ -88,38 +96,57 @@ def plot_catboost_shap(model, train_pool, plot_type='beeswarm', max_display=10, 
             A DataFrame summarizing mean absolute SHAP values per feature.
     """
     # Compute SHAP values using CatBoost's in-built functionality
-    shap_values = model.get_feature_importance(train_pool, type="ShapValues")
-    
+    shap_values = model.get_feature_importance(train_pool, importance_type="ShapValues")
+
     # If the returned array has an extra column (expected value), remove it.
-    if shap_values.shape[1] == len(model.feature_names_) + 1:
+    if len(shap_values.shape) > 1 and shap_values.shape[1] == len(model.feature_names_) + 1:
         shap_values = shap_values[:, :-1]
-    
+
     # Get feature names directly from the model
     feature_names = model.feature_names_
-    
+
     # Compute mean absolute SHAP values for each feature
     mean_abs_shap = np.abs(shap_values).mean(axis=0)
     importance_df = pd.DataFrame({
-            'Feature': feature_names,
-            'MeanAbsShap': mean_abs_shap
+        'Feature': feature_names,
+        'MeanAbsShap': mean_abs_shap
     }).sort_values('MeanAbsShap', ascending=False).reset_index(drop=True)
-    
+
     print(f"\nTop {max_display} Features by Mean Absolute SHAP Value:")
     print(importance_df.head(max_display))
-    
-    # Extract the features from the pool; if not a DataFrame, create one.
-    X_train = train_pool.get_features()
+
+    # Ensure X_train is a DataFrame with correct column names
     if not isinstance(X_train, pd.DataFrame):
         X_train = pd.DataFrame(X_train, columns=feature_names)
-    
-    # Generate the SHAP summary plot
+
+    # Generate and save both SHAP summary plots
     plt.figure(figsize=figsize)
-    if plot_type == 'beeswarm':
-        shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='dot', show=True)
-    elif plot_type == 'bar':
-        shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='bar', max_display=max_display,
-                          show=True)
-    else:
-        raise ValueError("Invalid plot_type. Choose 'beeswarm' or 'bar'.")
-    
+    shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='dot', show=False)
+    if save_path_beeswarm:
+        plt.savefig(save_path_beeswarm, bbox_inches='tight')
+        print(f"Beeswarm plot saved to {save_path_beeswarm}")
+
+    plt.figure(figsize=figsize)
+    shap.summary_plot(shap_values, X_train, feature_names=feature_names, plot_type='bar', max_display=max_display, show=False)
+    if save_path_bar:
+        plt.savefig(save_path_bar, bbox_inches='tight')
+        print(f"Bar plot saved to {save_path_bar}")
+
+    # campaign_shap_values = shap_values[:, list(X_train.columns).index('feat_utm_campaign')]
+    # # Combine SHAP values with original campaign data
+    # campaign_df = pd.DataFrame({
+    #     'campaign': X_train['feat_utm_campaign'],
+    #     'shap_value': campaign_shap_values
+    # })
+    # campaign_df.to_csv("interim_datasets/Campaign_SHAP.tsv", sep="\t")
+    #
+    # campaign_shap_values = shap_values[:, list(X_train.columns).index('feat_in_contact_with_job_advisor')]
+    # # Combine SHAP values with original campaign data
+    # campaign_df = pd.DataFrame({
+    #     'in_contact_with_job_advisor': X_train['feat_in_contact_with_job_advisor'],
+    #     'shap_value': campaign_shap_values
+    # })
+    # campaign_df.to_csv("interim_datasets/in_contact_with_job_advisor_SHAP.tsv", sep="\t")
+
     return shap_values, importance_df
+

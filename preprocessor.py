@@ -1,5 +1,6 @@
 import pickle
 import numpy as np
+import pandas as pd
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
 from features_house.afa_featrues import *
@@ -46,14 +47,16 @@ def get_labels(_df):
     logger.info("Creating enrollment and regression labels.")
     _df['category_label_bg_enrolled'] = _df['closed_won_deal__program_duration'].replace("7 Months", "8 Months").fillna(
         "not enrolled")
+
     _df['regression_label'] = _df['closed_won_deal__program_duration'].apply(multiply_plans_by_value)
-    _df['got_sql'] = _df['sql_date'].notna()
-    _df['enrolled'] = _df['closed_won_deal__program_duration'].notna()
-    
+    _df['got_sql'] = np.where(_df['sql_date'].notna(), "sql", "no_sql")
+    _df['enrolled'] = np.where(_df['closed_won_deal__program_duration'].notna(), "enrolled", "not_enrolled")
+
+    #requested_bg - requested/not requested
     return _df
 
 
-def get_text_tfidf_features(_df):
+def get_text_tfidf_features(_df, max_features=2500, n_components=150):
     _df['why_do_you_want_to_start_a_career_in_tech'] = _df['why_do_you_want_to_start_a_career_in_tech'].fillna("")
     _df["tokenized_version"] = _df['why_do_you_want_to_start_a_career_in_tech'].apply(
         lambda x: preprocess_text(x)).str.lower()
@@ -61,14 +64,14 @@ def get_text_tfidf_features(_df):
     _df.to_pickle("interim_datasets/4 - df_tokenized_version.pkl")
     
     _vectorizer = TfidfVectorizer(
-        max_features=1500,
+        max_features=max_features,
         ngram_range=(1, 4),
         max_df=0.85,
         min_df=3
     )
     _tfidf_matrix = _vectorizer.fit_transform(_df['tokenized_version'].values)
     
-    svd = TruncatedSVD(n_components=100, random_state=42)
+    svd = TruncatedSVD(n_components=n_components, random_state=42)
     X_reduced = svd.fit_transform(_tfidf_matrix)
     
     n_components = X_reduced.shape[1]
@@ -166,9 +169,12 @@ def geographical_features(_df):
 
 
 def marketing_related_features(_df):
+    campaign_types = pd.read_csv('campaign_types.tsv', sep="\t", dtype=(str,str))
     _df['feat_lpvariant'] = _df['lpvariant'].fillna("unknown")
+    _df['feat_campaign_type'] = _df['utm_campaign'].astype(str).map(campaign_types.set_index('campaign_id').to_dict()['campaign_type']).fillna("ir")
     _df['feat_utm_source'] = _df['utm_source'].apply(preprocess_utm_source)
     _df['feat_utm_campaign'] = _df['utm_campaign'].fillna("unknown")
+    _df['feat_utm_campaign_special'] = _df['utm_campaign'] == '16606269324'
     _df['feat_utm_term'] = _df['utm_term'].fillna("unknown")
     _df['feat_utm_medium'] = _df['utm_medium'].apply(preprocess_utm_medium)
     
@@ -300,22 +306,26 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
     df = other_candidate_features(df)
     
     df.to_pickle("interim_datasets/1 - joined_df_with_locations.pkl")
-    
-    df, vectorizer = get_text_tfidf_features(df)
-    logger.debug("Extracting text features for career motivation.")
-    text_grades = extract_all_text_features(df['why_do_you_want_to_start_a_career_in_tech'])
-    with_grades = df.join(text_grades, how="inner")
-    df = with_grades.copy()
-    
-    df.to_pickle("interim_datasets/2 - df_with_grades.pkl")
-    df = deals_related_features(df, deals_file)
-    
-    df.to_pickle("interim_datasets/3 - df_with_deals.pkl")
-    df = agent_candidate_relations_features(df)
-    df = get_labels(df)
-    
-    logger.debug("Preprocessing complete. Returning final DataFrame.")
+
+    for n_com in (50, 150, 200):
+        df, vectorizer = get_text_tfidf_features(df, n_components=n_com)
+        logger.debug("Extracting text features for career motivation.")
+        text_grades = extract_all_text_features(df['why_do_you_want_to_start_a_career_in_tech'])
+        with_grades = df.join(text_grades, how="inner")
+        df = with_grades.copy()
+
+        df.to_pickle("interim_datasets/2 - df_with_grades.pkl")
+        df = deals_related_features(df, deals_file)
+
+        df.to_pickle("interim_datasets/3 - df_with_deals.pkl")
+        df = agent_candidate_relations_features(df)
+        df = get_labels(df)
+
+        df.to_csv(f"training_data/preprocessed_{n_com}", sep="\t",  index_label="id")
+        logger.debug("Preprocessing complete. Returning final DataFrame.")
     return df, vectorizer
+
+
 
 
 # Example usage:
