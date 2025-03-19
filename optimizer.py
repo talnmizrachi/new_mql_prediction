@@ -15,13 +15,12 @@ for i, label in enumerate(label_encoder.classes_):
     print(f"Original: '{label}' → Encoded: {i}")
 
 # Split the data using encoded labels
-X_train, X_valid, y_train, y_valid = train_test_split(
-    pre_model.drop(target, axis=1),
-    y_encoded,
-    test_size=0.2,
-    random_state=42,
-    stratify=y_encoded
-)
+X_train, X_valid, y_train, y_valid = train_test_split(pre_model.drop(target, axis=1),
+                                                      y_encoded,
+                                                      test_size=0.2,
+                                                      random_state=42,
+                                                      stratify=y_encoded
+                                                      )
 
 # Calculate class weights - use the actual class indices now
 class_counts = np.bincount(y_encoded)
