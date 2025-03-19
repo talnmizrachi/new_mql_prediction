@@ -17,48 +17,52 @@ class Model:
         self.model = None
         # Store any additional hyperparameter overrides
         self.extra_params = kwargs
+        self.feature_names_ = None
+        self.hyperparams = {}
+
     
     def initialize_model(self):
         """
         Initializes and returns a CatBoost model based on the problem type.
         """
         # Common hyperparameters for all models
-        common_params = {
-                'iterations': 1000,
-                'learning_rate': 0.02,
-                'depth': 3,
+        self.hyperparams = {
+
+                'iterations': 100,
+                'learning_rate': 0.002,
+                'depth': 10,
                 'l2_leaf_reg': 12,
                 'bootstrap_type': 'Bernoulli',
-                'subsample': 0.35,
+                'subsample': 0.85,
                 'sampling_frequency': 'PerTreeLevel',
                 'use_best_model': True,
                 'random_seed': 42,
                 'verbose': 250,
                 'random_strength': 5.15,
                 'od_type': 'Iter',
-                'od_wait': 500
+                'od_wait': 250
         }
         # Update common parameters with any extra overrides
-        common_params.update(self.extra_params)
+        self.hyperparams.update(self.extra_params)
         
         # Create model based on problem type
         if self.problem_type == "regression":
             self.model = CatBoostRegressor(
-                **common_params,
+                **self.hyperparams,
                 eval_metric='RMSE',  # Regression evaluation metric
                 loss_function='RMSE'  # Regression loss function
             )
         elif self.problem_type == "binary":
             self.model = CatBoostClassifier(
-                **common_params,
-                eval_metric='Precision',  # Classification evaluation metric
-                custom_metric=['F1', 'AUC'],
+                **self.hyperparams,
+                eval_metric='F1',  # Classification evaluation metric
+                custom_metric=['Precision', 'AUC'],
                 loss_function='Logloss',  # Binary classification loss function
                 class_weights=self.weights  # Optional: class weights for imbalance
             )
         elif self.problem_type == "multiclass":
             self.model = CatBoostClassifier(
-                **common_params,
+                **self.hyperparams,
                 eval_metric='Accuracy',  # Multiclass evaluation metric
                 loss_function='MultiClass'  # Multiclass loss function
             )
@@ -94,7 +98,27 @@ class Model:
         if not self.is_init or self.model is None:
             raise ValueError("Model is not initialized. Call initialize_model() before predict().")
         return self.model.predict(X)
-        
+
+    def predict_proba(self, X):
+        if not self.is_init or self.model is None:
+            raise ValueError("Model is not initialized. Call initialize_model() before predict().")
+        return self.model.predict_proba(X)
+
+    def get_feature_importance(self, training_pool, importance_type='FeatureImportance'):
+        if not self.is_init or self.model is None:
+            raise ValueError("Model is not initialized. Call initialize_model() before predict().")
+
+        self.feature_names_ = self.model.feature_names_  # Always store feature names
+
+        # Handle both default FeatureImportance and SHAP-based importance
+        if importance_type == 'ShapValues':
+            return self.model.get_feature_importance(training_pool, type='ShapValues')
+        elif importance_type in ['FeatureImportance', 'PredictionValuesChange', 'LossFunctionChange']:
+            return self.model.get_feature_importance(training_pool, type=importance_type)
+        else:
+            raise ValueError(
+                f"Invalid importance_type: {importance_type}. Choose from 'FeatureImportance', 'ShapValues', etc.")
+
 
 if __name__ == '__main__':
     # Create CatBoost pools with categorical features
