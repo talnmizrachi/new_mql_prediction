@@ -28,7 +28,7 @@ class Model:
         # Common hyperparameters for all models
         self.hyperparams = {
 
-                'iterations': 100,
+                'iterations': 5000,
                 'learning_rate': 0.002,
                 'depth': 10,
                 'l2_leaf_reg': 12,
@@ -40,7 +40,7 @@ class Model:
                 'verbose': 250,
                 'random_strength': 5.15,
                 'od_type': 'Iter',
-                'od_wait': 250
+                'od_wait': 1000
         }
         # Update common parameters with any extra overrides
         self.hyperparams.update(self.extra_params)

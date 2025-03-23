@@ -323,6 +323,8 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
 
         df.to_csv(f"training_data/preprocessed_{n_com}", sep="\t",  index_label="id")
         logger.debug("Preprocessing complete. Returning final DataFrame.")
+        break
+        
     return df, vectorizer
 
 

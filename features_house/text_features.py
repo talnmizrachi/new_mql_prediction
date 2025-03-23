@@ -66,17 +66,17 @@ def extract_all_text_features(text_series, lang='en'):
     # Load appropriate spaCy model
     try:
         if lang == 'en':
-            nlp = spacy.load("en_core_web_md")
+            nlp = spacy.load("en_core_web_trf")
         elif lang == 'de':
-            nlp = spacy.load("de_core_news_sm")
+            nlp = spacy.load("de_dep_news_trf")
         else:
-            nlp = spacy.load("en_core_web_md")
+            nlp = spacy.load("en_core_web_trf")
     except OSError:
         print(f"spaCy model for language '{lang}' not found. Installing fallback model...")
         from spacy.cli import download
         try:
-            download("en_core_web_md")
-            nlp = spacy.load("en_core_web_md")
+            download("en_core_web_trf")
+            nlp = spacy.load("en_core_web_trf")
         except:
             print("Failed to download model. Using blank model instead.")
             nlp = spacy.blank("en")
