@@ -10,6 +10,7 @@ import unicodedata
 import contractions
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.corpus import stopwords
+import emoji  # Optional for better emoji coverage
 
 
 def check_and_download_punkt_tab():
@@ -254,21 +255,9 @@ def extract_all_text_features(text_series, lang='en'):
 
 
 # Emoji pattern
-def remove_emojis(text):
-    emoji_pattern = re.compile("["
-                               u"\U0001F600-\U0001F64F"  # emoticons
-                               u"\U0001F300-\U0001F5FF"  # symbols & pictographs
-                               u"\U0001F680-\U0001F6FF"  # transport & map symbols
-                               u"\U0001F700-\U0001F77F"  # alchemical symbols
-                               u"\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
-                               u"\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
-                               u"\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
-                               u"\U0001FA00-\U0001FA6F"  # Chess Symbols
-                               u"\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
-                               u"\U00002702-\U000027B0"  # Dingbats
-                               u"\U000024C2-\U0001F251"  # Enclosed characters
-                               "]+", flags=re.UNICODE)
-    return emoji_pattern.sub(r'', text)
+def remove_emojis(text, replace_with=''):
+    # Using `emoji` library for better coverage
+    return emoji.replace_emoji(text, replace_with)
 
 
 # Remove accents
@@ -277,50 +266,30 @@ def remove_accents(text):
 
 
 # Text preprocessing function
-def preprocess_text(text):
-    text = text.lower()
+def preprocess_text(text_):
+    text_ = text_.lower()
     
-    # Remove emojis
-    text = remove_emojis(text)
+    # Remove emojis, accents, punctuations and digits,excessive whitespaces,
+    # and Expand contractions (e.g., "I've" -> "I have")
+    text_ = remove_emojis(text_)
+    text_ = remove_accents(text_)
+    text_ = contractions.fix(text_)
+    text_ = re.sub(r'[\d' + string.punctuation + r']+', '', text_)
+    text_ = re.sub(r'\s+', ' ', text_).strip()
     
-    # Remove accents
-    text = remove_accents(text)
-    
-    # Expand contractions (e.g., "I've" -> "I have")
-    text = contractions.fix(text)
-    
-    # Remove punctuations
-    text = text.translate(str.maketrans('', '', string.punctuation))
-    
-    # Remove digits
-    text = re.sub(r'\d+', '', text)
-    
-    # Remove excessive whitespaces, newlines, and tabs
-    text = re.sub(r'\s+', ' ', text).strip()
-    
-    # Detect language
+    # Language detection
     try:
-        language = detect(text)
+        language = detect(text_)
     except Exception:
-        language = 'en'  # Default to English if detection fails
+        language = 'en'
     
-    # Tokenization based on language
-    if language == 'de':
-        tokens = word_tokenize(text)
-        nlp = nlp_de
-    else:
-        tokens = word_tokenize(text)
-        nlp = nlp_en
-        
-    # Remove stopwords before lemmatization
+    nlp = nlp_de if language == 'de' else nlp_en
+    
+    doc = nlp(text_)
     stop_words = set(stopwords.words('german') if language == 'de' else stopwords.words('english'))
-    tokens = [word.lower() for word in tokens if word.lower() not in stop_words]
-    if language in ("en", "de"):
-        # Lemmatization using spaCy
-        doc = nlp(' '.join(tokens))
-        tokens = [token.lemma_ for token in doc]
+    tokens = [token.lemma_.lower() for token in doc if token.text.lower() not in stop_words]
     
-    return " ".join(tokens)
+    return " ".join(tokens), language
 
 
 if __name__ == '__main__':

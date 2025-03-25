@@ -10,15 +10,25 @@ def agent_changer(agent):
     return agent.lower().strip()
 
 
-# df['feat_Agent_of_AfA']
+KNOWN_MALE_AGENTS = {"matthias höinghaus"}
+KNOWN_FEMALE_PATTERNS = [r"\bfrau\b"]
+KNOWN_MALE_PATTERNS = [r"\bherr{1,2}\b"]
+
 
 def agent_gender(agent):
-    agent = agent.lower()
-    
-    if "frau " in agent:
-        return "female"
-    if len(re.findall(r'her{1,2} ', agent)) > 0 or agent == "matthias höinghaus":
+    # Clean text for consistent processing
+    agent = agent.strip().casefold()
+
+    # Check for explicit matches
+    if agent in KNOWN_MALE_AGENTS:
         return "male"
+
+    # Search for gender markers
+    if any(re.search(pattern, agent) for pattern in KNOWN_FEMALE_PATTERNS):
+        return "female"
+    if any(re.search(pattern, agent) for pattern in KNOWN_MALE_PATTERNS):
+        return "male"
+
     return "unknown"
 
 
@@ -33,9 +43,9 @@ def agent_is_known(agent):
 
 def point_out_genders(cols):
     feat_gender, feat_agent_gender = cols
-    if 'unknown' in (feat_gender, feat_agent_gender):
+    
+    # Handle unknowns efficiently
+    if 'unknown' in {feat_gender, feat_agent_gender}:
         return 'unable to determine'
     
-    if feat_gender == feat_agent_gender:
-        return "same gender"
-    return "not the same"
+    return "same gender" if feat_gender == feat_agent_gender else "not the same"

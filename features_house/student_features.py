@@ -101,43 +101,23 @@ def norm_employment(status):
     if status_str == "sonstiges" or status_str == "other":
         return "other"
     return "other"
-    
+
 
 def clean_preferred_cohort(cohort_series):
-    # Standardize German months to English
+    # Standardize month names using mapping
     month_mapping = {
-            "Januar": "January",
-            "Februar": "February",
-            "März": "March",
-            "Mai": "May",
-            "Juni": "June",
-            "Juli": "July",
-            "Oktober": "October",
-            "Dezember": "December"
+            "januar": "January", "februar": "February", "märz": "March", "mai": "May",
+            "juni": "June", "juli": "July", "oktober": "October", "dezember": "December",
+            "jan ": "January ", "feb ": "February ", "mar ": "March ", "apr ": "April ",
+            "jun ": "June ", "jul ": "July ", "aug ": "August ", "sep ": "September ",
+            "oct ": "October ", "nov ": "November ", "dec ": "December "
     }
     
-    # Replace German month names
-    cohort_series = cohort_series.replace(month_mapping, regex=True)
+    # Clean text & apply mapping
+    cohort_series = cohort_series.str.lower().replace(month_mapping, regex=True)
+    cohort_series = cohort_series.str.replace(r' class', '', regex=True).str.strip()
     
-    # Remove words like "Class" and extra spaces
-    cohort_series = cohort_series.str.replace(r' Class', '', regex=True).str.strip()
-    
-    # Fix abbreviated months (e.g., 'Jan 2025' -> 'January 2025')
-    cohort_series = cohort_series.replace({
-            "Jan ": "January ",
-            "Feb ": "February ",
-            "Mar ": "March ",
-            "Apr ": "April ",
-            "Jun ": "June ",
-            "Jul ": "July ",
-            "Aug ": "August ",
-            "Sep ": "September ",
-            "Oct ": "October ",
-            "Nov ": "November ",
-            "Dec ": "December "
-    }, regex=True)
-    
-    # Convert to datetime, forcing errors to NaT for invalid entries
+    # Convert to datetime with coercion for invalid values
     return pd.to_datetime(cohort_series, format='%B %Y', errors='coerce').dt.tz_localize('UTC')
 
 
@@ -149,38 +129,34 @@ def preprocess_registered_with_the_jobcenter(val):
     return "not yet"
 
 
-def field_of_intreset_preprocess(field):
+def field_of_interest_preprocess(field):
     if pd.isna(field):
         return "not specified"
+
+    # Clean text and map known patterns
     field = field.strip().lower()
-    if "oc" in field or "orient" in field or "tech" in field:
-        return "orientation course"
-    if field.startswith("ai"):
-        return "ai engineering"
-    if "cyber" in field or field.startswith("cy"):
-        return "cybersecurity"
-    if "data" in field or field.startswith("da"):
-        return "data analytics"
-    if "software" in field or "se" == field or "swe" in field:
-        return "software engineering"
-    if "web" in field:
-        return "web development"
-    if "cloud" in field:
-        return "cloud"
-    if "backend" in field:
-        return "backend"
-    if "sales" in field:
-        return "sales"
-    if "chip des" in field:
-        return "chip design"
-    if field.startswith("it"):
-        return "it support"
-    if field.startswith("qa"):
-        return "qa engineering"
-    if field == 'online marketing':
-        return field
-    if field in ("i don't know yet", "not sure yet", "i'm not sure yet"):
-        return "not sure"
-    
-    return f"other"
+
+    field_mapping = {
+        "orientation course": ["oc", "orient", "tech"],
+        "ai engineering": ["ai"],
+        "cybersecurity": ["cyber", "cy"],
+        "data analytics": ["data", "da"],
+        "software engineering": ["software", "se", "swe"],
+        "web development": ["web"],
+        "cloud": ["cloud"],
+        "backend": ["backend"],
+        "sales": ["sales"],
+        "chip design": ["chip des"],
+        "it support": ["it"],
+        "qa engineering": ["qa"],
+        "online marketing": ["online marketing"],
+        "not sure": ["i don't know yet", "not sure yet", "i'm not sure yet"]
+    }
+
+    # Efficient mapping logic
+    for key, patterns in field_mapping.items():
+        if any(pattern in field for pattern in patterns):
+            return key
+
+    return "other"
 

@@ -11,7 +11,7 @@ from features_house.marketing_features import preprocess_utm_source, preprocess_
 from features_house.ms_features import create_success_dict
 from features_house.states_features import generate_states_data
 from features_house.student_features import preprocess_age_ranges, norm_employment, jc_advisor_status_features, \
-    clean_preferred_cohort, preprocess_visa_status, field_of_intreset_preprocess
+    clean_preferred_cohort, preprocess_visa_status, field_of_interest_preprocess
 from features_house.text_features import extract_all_text_features, preprocess_text
 from labels_house.labels_functions import multiply_plans_by_value
 from Logger.LoggingGenerator import Logger
@@ -22,14 +22,23 @@ logger = Logger(os.path.basename(__file__).split('.')[0]).get_logger()
 
 def other_candidate_features(_df):
     logger.info("Processing preferred cohort and expectation features.")
+    
+    # Clean and transform 'preferred_cohort'
     _df['preferred_cohort'] = clean_preferred_cohort(_df['preferred_cohort'])
+    
+    # Expectation Feature
     _df['feat_expectation'] = (_df['preferred_cohort'] - _df['mql_date']).dt.days
-    _df['feat_expectation'] = _df['feat_expectation'].fillna(_df['feat_expectation'].mean())
+    _df['feat_expectation'].fillna(_df['feat_expectation'].mean(), inplace=True)
     _df['feat_expectation'] = np.sign(_df['feat_expectation']) * np.log1p(np.abs(_df['feat_expectation']))
     
-    _df['feat_field_of_interest'] = _df['field_of_interest'].apply(field_of_intreset_preprocess)
+    # Field of Interest Feature
+    _df['feat_field_of_interest'] = _df['field_of_interest'].fillna('not specified').apply(field_of_interest_preprocess)
+    
+    # Residents Feature
     _df['feat_residents'] = _df['residents'].fillna("not specified")
-    _df["feat_days_to_mql"] = np.log1p((_df['mql_date'] - _df['createdate']).dt.days)
+    
+    # Days to MQL Feature
+    _df['feat_days_to_mql'] = np.log1p((_df['mql_date'] - _df['createdate']).dt.days)
     
     return _df
 
@@ -316,9 +325,11 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
     
     df.to_pickle("interim_datasets/1 - joined_df_with_locations.pkl")
     
-    preprocess_text
+    df[["tokenized_version", "detected_language"]] = df['why_do_you_want_to_start_a_career_in_tech'].apply(
+        lambda x: pd.Series(preprocess_text(x))
+    )
     
-    df, vectorizer = get_text_tfidf_features(df, n_components=50)
+    df, text_pipeline = get_text_tfidf_features(df, n_components=50)
     logger.debug("Extracting text features for career motivation.")
     text_grades = extract_all_text_features(df['why_do_you_want_to_start_a_career_in_tech'])
     with_grades = df.join(text_grades, how="inner")
@@ -333,7 +344,7 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
 
     df.to_csv(f"training_data/preprocessed_{50}_new", sep="\t",  index_label="id")
     logger.debug("Preprocessing complete. Returning final DataFrame.")
-    return df, vectorizer
+    return df, text_pipeline
 
 
 
