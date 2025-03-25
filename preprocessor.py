@@ -1,6 +1,6 @@
 import pickle
 import numpy as np
-import pandas as pd
+from sklearn.pipeline import Pipeline
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
 from features_house.afa_featrues import *
@@ -56,36 +56,45 @@ def get_labels(_df):
     return _df
 
 
-def get_text_tfidf_features(_df, max_features=2500, n_components=150):
-    _df['why_do_you_want_to_start_a_career_in_tech'] = _df['why_do_you_want_to_start_a_career_in_tech'].fillna("")
-    _df["tokenized_version"] = _df['why_do_you_want_to_start_a_career_in_tech'].apply(
-        lambda x: preprocess_text(x)).str.lower()
-    
-    _df.to_pickle("interim_datasets/4 - df_tokenized_version.pkl")
-    
-    _vectorizer = TfidfVectorizer(
-        max_features=max_features,
-        ngram_range=(1, 4),
-        max_df=0.85,
-        min_df=3
-    )
-    _tfidf_matrix = _vectorizer.fit_transform(_df['tokenized_version'].values)
-    
-    svd = TruncatedSVD(n_components=n_components, random_state=42)
-    X_reduced = svd.fit_transform(_tfidf_matrix)
-    
-    n_components = X_reduced.shape[1]
-    svd_columns = [f'svd_component_{i + 1}' for i in range(n_components)]
+def get_text_tfidf_features(_df, max_features=2500, n_components=150, verbose=True, save_files=True):
+
+    if save_files:
+        _df.to_pickle(f"interim_datasets/df_tokenized_version_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.pkl")
+
+    # Pipeline with TfidfVectorizer and TruncatedSVD
+    text_pipeline = Pipeline([
+        ('tfidf', TfidfVectorizer(
+            max_features=max_features,
+            ngram_range=(1, 6),
+            max_df=0.85,
+            min_df=3,
+            random_state=42  # Ensures reproducibility
+        )),
+        ('svd', TruncatedSVD(
+            n_components=min(n_components, max_features),
+            random_state=42
+        ))
+    ])
+
+    # Fit and transform the data
+    X_reduced = text_pipeline.fit_transform(_df['tokenized_version'].values)
+
+    # Create SVD columns
+    svd_columns = [f'svd_component_{i + 1}' for i in range(X_reduced.shape[1])]
     svd_df = pd.DataFrame(X_reduced, index=_df.index, columns=svd_columns)
-    
-    # Combine the original DataFrame with the SVD DataFrame
+
+    # Combine the DataFrames
     df_combined = pd.concat([_df, svd_df], axis=1)
-    _df = df_combined.copy()
-    
-    with open('pickle_jar/tfidf_vectorizer.pkl', 'wb') as f:
-        pickle.dump(_vectorizer, f)
-    
-    return _df, _vectorizer
+
+    # Save pipeline instead of separate vectorizer
+    if save_files:
+        with open(f'pickle_jar/text_pipeline_{pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")}.pkl', 'wb') as f:
+            pickle.dump(text_pipeline, f)
+
+    if verbose:
+        print(f"TF-IDF + SVD Pipeline Output Shape: {X_reduced.shape}")
+
+    return df_combined, text_pipeline
 
 
 def deals_related_features(_df, _deals_file):
@@ -290,7 +299,6 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
     date_columns = ['requested_bg_date', 'createdate', 'mql_date', 'sql_date', 'bg_enrolled_date']
     new_df = convert_date_columns(new_df, date_columns)
     
-    logger.debug("Starting preprocessing age ranges and employment information.")
     df = preprocess_age_ranges(new_df)
     df = one_line_features(df)
     df = profile_completion_features(df)
@@ -301,28 +309,30 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
     df = geographical_features(df)
     df = preprocess_visa_status(df)
     df = preprocess_datetime_columns_hour_minutes_features(df, 'mql_date')
+    df = preprocess_datetime_columns_hour_minutes_features(df, 'sql_date')
     df = inferring_features_from_names(df, names_file)
     df = past_experience_features(df)
     df = other_candidate_features(df)
     
     df.to_pickle("interim_datasets/1 - joined_df_with_locations.pkl")
+    
+    preprocess_text
+    
+    df, vectorizer = get_text_tfidf_features(df, n_components=50)
+    logger.debug("Extracting text features for career motivation.")
+    text_grades = extract_all_text_features(df['why_do_you_want_to_start_a_career_in_tech'])
+    with_grades = df.join(text_grades, how="inner")
+    df = with_grades.copy()
 
-    for n_com in (50, 150, 200):
-        df, vectorizer = get_text_tfidf_features(df, n_components=n_com)
-        logger.debug("Extracting text features for career motivation.")
-        text_grades = extract_all_text_features(df['why_do_you_want_to_start_a_career_in_tech'])
-        with_grades = df.join(text_grades, how="inner")
-        df = with_grades.copy()
+    df.to_pickle("interim_datasets/2 - df_with_grades.pkl")
+    df = deals_related_features(df, deals_file)
 
-        df.to_pickle("interim_datasets/2 - df_with_grades.pkl")
-        df = deals_related_features(df, deals_file)
+    df.to_pickle("interim_datasets/3 - df_with_deals.pkl")
+    df = agent_candidate_relations_features(df)
+    df = get_labels(df)
 
-        df.to_pickle("interim_datasets/3 - df_with_deals.pkl")
-        df = agent_candidate_relations_features(df)
-        df = get_labels(df)
-
-        df.to_csv(f"training_data/preprocessed_{n_com}", sep="\t",  index_label="id")
-        logger.debug("Preprocessing complete. Returning final DataFrame.")
+    df.to_csv(f"training_data/preprocessed_{50}_new", sep="\t",  index_label="id")
+    logger.debug("Preprocessing complete. Returning final DataFrame.")
     return df, vectorizer
 
 

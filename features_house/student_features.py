@@ -32,8 +32,6 @@ def preprocess_visa_status(dataframe):
             return "permanent resident"
         if working_status.find("eu blue card") > -1 or working_status.find("blaue karte") > -1:
             return "eu blue card"
-        if working_status.find("24") > -1:
-            return "paragraph 24"
         if working_status.find("asylum") > -1 or working_status.find("24") > -1:
             return "asylum seeker"
         if working_status.find("temporary stay") > -1 or working_status.find("aufenthaltserlaubnis") > -1:
