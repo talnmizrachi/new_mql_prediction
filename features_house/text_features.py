@@ -267,7 +267,7 @@ def remove_accents(text):
 
 # Text preprocessing function
 def preprocess_text(text_):
-    if text_.isspace() or pd.isna(text_):
+    if pd.isna(text_):
         return "", "en"
     text_ = text_.lower()
     

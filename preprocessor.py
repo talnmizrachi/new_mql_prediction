@@ -74,10 +74,9 @@ def get_text_tfidf_features(_df, max_features=2500, n_components=150, verbose=Tr
     text_pipeline = Pipeline([
         ('tfidf', TfidfVectorizer(
             max_features=max_features,
-            ngram_range=(1, 6),
+            ngram_range=(1, 5),
             max_df=0.85,
             min_df=3,
-            random_state=42  # Ensures reproducibility
         )),
         ('svd', TruncatedSVD(
             n_components=min(n_components, max_features),
@@ -342,11 +341,9 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
     df = agent_candidate_relations_features(df)
     df = get_labels(df)
 
-    df.to_csv(f"training_data/preprocessed_{50}_new", sep="\t",  index_label="id")
+    df.to_csv(f"training_data/preprocessed_50_new.tsv", sep="\t",  index_label="id")
     logger.debug("Preprocessing complete. Returning final DataFrame.")
     return df, text_pipeline
-
-
 
 
 # Example usage:
