@@ -6,44 +6,63 @@ import re
 def preprocess_utm_source(source_col):
     if pd.isna(source_col):
         return "unknown"
-    
-    source_col = source_col.lower()
-    if source_col in ("google", 'adwords'):
-        return "google"
-    if source_col.startswith("ig"):
-        return "instagram"
-    if source_col in ("fb", "facebook", "meta") or source_col.startswith("fb"):
-        return "facebook"
-    if source_col in ("website", "webiste", "Landing Page", "campus"):
-        return "ms_property"
-    if source_col.find("source") > -1:
+
+    # Clean text for consistency
+    source_col = source_col.strip().casefold()
+
+    # Dictionary-based mapping for clarity and scalability
+    source_mapping = {
+        "google": ["google", "adwords"],
+        "instagram": ["ig", "instagram"],
+        "facebook": ["fb", "facebook", "meta"],
+        "ms_property": ["website", "webiste", "landing page", "campus"],
+        "email": ["newsletter", "email", "hs_automation", "hs_email"],
+        "whatsapp": ["whatsapp"]
+    }
+
+    # Search for exact matches
+    for category, keywords in source_mapping.items():
+        if source_col in keywords:
+            return category
+
+    # Handle specific substring conditions
+    if "source" in source_col:
         return "unknown"
-    if source_col in ("newsletter", "email", "hs_automation", "hs_email"):
-        return "email"
-    if source_col == 'whatsapp':
-        return source_col
+
     return "other"
 
 
 def preprocess_utm_medium(medium_col):
     if pd.isna(medium_col):
         return "unknown"
-    
-    medium_col = medium_col.lower()
-    if medium_col in ("cpc", "paid", "ppc", "paid\t"):
-        return "paid"
-    
-    if medium_col.find("utm_medium") > -1:
+
+    # Clean text for consistency
+    medium_col = medium_col.strip().casefold()
+
+    # Dictionary-based mapping for clarity and scalability
+    medium_mapping = {
+        "paid": ["cpc", "paid", "ppc"],
+        "organic": ["organic"],
+        "direct": ["direct"],
+        "social": ["social"],
+    }
+
+    # Search for exact matches
+    for category, keywords in medium_mapping.items():
+        if medium_col in keywords:
+            return category
+
+    # Special substring conditions
+    if "utm_medium" in medium_col:
         return "unknown"
-    if medium_col.find("organic") > -1:
-        return "organic"
-    if "direct" in medium_col:
-        return "direct"
-    if "social" in medium_col:
-        return "social"
-    if 'niklas' in medium_col or 'leonidas' in medium_col or "cedric" in medium_col:
+
+    # Influencer check using a set for scalability
+    known_influencers = {"niklas", "leonidas", "cedric"}
+    if any(name in medium_col for name in known_influencers):
         return "influencer"
+
     return "unknown"
+
 
 
 def preprocess_all_data_ad_name(dataframe):

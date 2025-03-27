@@ -1,14 +1,14 @@
 import nltk
 import numpy as np
-from langdetect import detect
-import string
 import pandas as pd
 import math
-import spacy
-import re
 import unicodedata
+import re
+import string
+from langdetect import detect
 import contractions
-from nltk.tokenize import word_tokenize, sent_tokenize
+import spacy
+import emoji
 from nltk.corpus import stopwords
 
 
@@ -254,21 +254,9 @@ def extract_all_text_features(text_series, lang='en'):
 
 
 # Emoji pattern
-def remove_emojis(text):
-    emoji_pattern = re.compile("["
-                               u"\U0001F600-\U0001F64F"  # emoticons
-                               u"\U0001F300-\U0001F5FF"  # symbols & pictographs
-                               u"\U0001F680-\U0001F6FF"  # transport & map symbols
-                               u"\U0001F700-\U0001F77F"  # alchemical symbols
-                               u"\U0001F780-\U0001F7FF"  # Geometric Shapes Extended
-                               u"\U0001F800-\U0001F8FF"  # Supplemental Arrows-C
-                               u"\U0001F900-\U0001F9FF"  # Supplemental Symbols and Pictographs
-                               u"\U0001FA00-\U0001FA6F"  # Chess Symbols
-                               u"\U0001FA70-\U0001FAFF"  # Symbols and Pictographs Extended-A
-                               u"\U00002702-\U000027B0"  # Dingbats
-                               u"\U000024C2-\U0001F251"  # Enclosed characters
-                               "]+", flags=re.UNICODE)
-    return emoji_pattern.sub(r'', text)
+def remove_emojis(_text, replace_with=''):
+    # Using `emoji` library for better coverage
+    return emoji.replace_emoji(_text, replace_with)
 
 
 # Remove accents
@@ -276,51 +264,35 @@ def remove_accents(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
 
-# Text preprocessing function
-def preprocess_text(text):
-    text = text.lower()
+# Assuming remove_emojis and remove_accents are defined somewhere
+def preprocess_text(_text):
+    _text = _text.lower()
     
-    # Remove emojis
-    text = remove_emojis(text)
+    # Remove emojis, Remove accents, Expand contractions, Remove punctuations and digits, Remove excessive whitespaces
+    _text = remove_emojis(_text)
+    _text = remove_accents(_text)
+    _text = contractions.fix(_text)
+    _text = re.sub(r'[\d' + string.punctuation + r']+', '', _text)
+    _text = re.sub(r'\s+', ' ', _text).strip()
     
-    # Remove accents
-    text = remove_accents(text)
-    
-    # Expand contractions (e.g., "I've" -> "I have")
-    text = contractions.fix(text)
-    
-    # Remove punctuations
-    text = text.translate(str.maketrans('', '', string.punctuation))
-    
-    # Remove digits
-    text = re.sub(r'\d+', '', text)
-    
-    # Remove excessive whitespaces, newlines, and tabs
-    text = re.sub(r'\s+', ' ', text).strip()
-    
-    # Detect language
     try:
-        language = detect(text)
+        language = detect(_text)
     except Exception:
-        language = 'en'  # Default to English if detection fails
+        language = 'en'
     
-    # Tokenization based on language
-    if language == 'de':
-        tokens = word_tokenize(text)
-        nlp = nlp_de
-    else:
-        tokens = word_tokenize(text)
-        nlp = nlp_en
-        
-    # Remove stopwords before lemmatization
+    # Truncate text to avoid exceeding model limits
+    _text = " ".join(_text.split())
+    
+    # Load appropriate spaCy model based on detected language
+    nlp = nlp_de if language == 'de' else nlp_en
+    
+    # Tokenization and lemmatization in one step using spaCy
+    doc = nlp(_text)
     stop_words = set(stopwords.words('german') if language == 'de' else stopwords.words('english'))
-    tokens = [word.lower() for word in tokens if word.lower() not in stop_words]
-    if language in ("en", "de"):
-        # Lemmatization using spaCy
-        doc = nlp(' '.join(tokens))
-        tokens = [token.lemma_ for token in doc]
     
-    return " ".join(tokens)
+    tokens = [token.lemma_.lower() for token in doc if token.text.lower() not in stop_words]
+    
+    return " ".join(tokens), language
 
 
 if __name__ == '__main__':
