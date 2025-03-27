@@ -10,6 +10,7 @@ import contractions
 import spacy
 import emoji
 from nltk.corpus import stopwords
+import emoji  # Optional for better emoji coverage
 
 
 def check_and_download_punkt_tab():
@@ -259,6 +260,7 @@ def remove_emojis(_text, replace_with=''):
     return emoji.replace_emoji(_text, replace_with)
 
 
+
 # Remove accents
 def remove_accents(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
@@ -291,7 +293,7 @@ def preprocess_text(_text):
     stop_words = set(stopwords.words('german') if language == 'de' else stopwords.words('english'))
     
     tokens = [token.lemma_.lower() for token in doc if token.text.lower() not in stop_words]
-    
+  
     return " ".join(tokens), language
 
 

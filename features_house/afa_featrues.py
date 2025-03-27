@@ -10,7 +10,10 @@ def agent_changer(agent):
     return agent.lower().strip()
 
 
-# df['feat_Agent_of_AfA']
+KNOWN_MALE_AGENTS = {"matthias höinghaus"}
+KNOWN_FEMALE_PATTERNS = [r"\bfrau\b"]
+KNOWN_MALE_PATTERNS = [r"\bherr{1,2}\b"]
+
 
 # Known agent exceptions for more scalable logic
 KNOWN_MALE_AGENTS = {"matthias höinghaus"}
@@ -53,3 +56,4 @@ def point_out_genders(cols):
     
     # Efficient comparison
     return "same gender" if feat_gender == feat_agent_gender else "not the same"
+

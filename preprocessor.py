@@ -69,7 +69,7 @@ def get_labels(_df):
     return _df
 
 
-def get_text_tfidf_features(_df, max_features=3500, n_components=150, verbose=True, save_files=True):
+def get_text_tfidf_features(_df, max_features=2500, n_components=150, verbose=True, save_files=True):
 
     if save_files:
         _df.to_pickle(f"interim_datasets/df_tokenized_version_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.pkl")
@@ -78,9 +78,10 @@ def get_text_tfidf_features(_df, max_features=3500, n_components=150, verbose=Tr
     text_pipeline = Pipeline([
         ('tfidf', TfidfVectorizer(
             max_features=max_features,
-            ngram_range=(1, 4),
-            max_df=0.9,
-            min_df=2,
+
+            ngram_range=(1, 5),
+            max_df=0.85,
+            min_df=3,
         )),
         ('svd', TruncatedSVD(
             n_components=min(n_components, max_features),
@@ -90,6 +91,7 @@ def get_text_tfidf_features(_df, max_features=3500, n_components=150, verbose=Tr
 
     # Fit and transform the data
     X_reduced = text_pipeline.fit_transform(_df['tokenized_version'].values).astype('float32')
+
 
     # Create SVD columns
     svd_columns = [f'svd_component_{i + 1}' for i in range(X_reduced.shape[1])]
@@ -343,17 +345,6 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
             with_grades = df.join(text_grades, how="inner")
             df = with_grades.copy()
     
-            df.to_pickle("interim_datasets/2 - df_with_grades.pkl")
-            df = deals_related_features(df, deals_file)
-    
-            df.to_pickle("interim_datasets/3 - df_with_deals.pkl")
-            df = agent_candidate_relations_features(df)
-            df = get_labels(df)
-    
-            df.to_csv(f"training_data/preprocessed_{n_com}", sep="\t",  index_label="id")
-            logger.debug("Preprocessing complete. Returning final DataFrame.")
-            break
-        
     return df, text_pipeline
 
 
