@@ -1,5 +1,5 @@
-import pickle
 import numpy as np
+import pickle
 from sklearn.pipeline import Pipeline
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -60,7 +60,11 @@ def get_labels(_df):
     _df['regression_label'] = _df['closed_won_deal__program_duration'].apply(multiply_plans_by_value)
     _df['got_sql'] = np.where(_df['sql_date'].notna(), "sql", "no_sql")
     _df['enrolled'] = np.where(_df['closed_won_deal__program_duration'].notna(), "enrolled", "not_enrolled")
-
+    _df['label_potential_high'] = np.where(_df['deal_potential'].str.lower()=='high', 'high', "not high")
+    _df['label_potential_medium'] = np.where(_df['deal_potential'].str.lower() == 'medium', 'medium', "not medium")
+    _df['label_potential_low'] = np.where(_df['deal_potential'].str.lower() == 'low', 'low', "not low")
+    _df['label_deal_potential'] = _df['deal_potential'].str.lower().fillna("unknown")
+    
     #requested_bg - requested/not requested
     return _df
 
@@ -74,6 +78,7 @@ def get_text_tfidf_features(_df, max_features=2500, n_components=150, verbose=Tr
     text_pipeline = Pipeline([
         ('tfidf', TfidfVectorizer(
             max_features=max_features,
+
             ngram_range=(1, 5),
             max_df=0.85,
             min_df=3,
@@ -85,7 +90,8 @@ def get_text_tfidf_features(_df, max_features=2500, n_components=150, verbose=Tr
     ])
 
     # Fit and transform the data
-    X_reduced = text_pipeline.fit_transform(_df['tokenized_version'].values)
+    X_reduced = text_pipeline.fit_transform(_df['tokenized_version'].values).astype('float32')
+
 
     # Create SVD columns
     svd_columns = [f'svd_component_{i + 1}' for i in range(X_reduced.shape[1])]
@@ -107,22 +113,22 @@ def get_text_tfidf_features(_df, max_features=2500, n_components=150, verbose=Tr
 
 def deals_related_features(_df, _deals_file):
     logger.debug("Processing deals data and joining with main DataFrame.")
-    deals = pd.read_csv(_deals_file, dtype={"Associated Contact IDs": str})
-    deals = deals[~deals['Associated Contact IDs'].isna()].copy()
-    deals = deals[~deals['Associated Contact IDs'].str.contains(";")].copy()
-    deals['Associated Contact IDs'] = deals['Associated Contact IDs'].astype(np.int64)
-    deals = deals.set_index("Associated Contact IDs")[['Deal owner', 'Agent of AfA/JC', 'Deal potential']].copy()
+    deals = pd.read_csv(_deals_file, sep="\t", dtype={"hubspot_id ": str})
+
+    deals['hubspot_id'] = deals['hubspot_id'].astype(np.int64)
+    deals = deals.set_index("hubspot_id")[['deal_potential', 'agent_of_afa', 'deal_owner']].copy()
     _df = _df.join(deals.dropna(), how="left")
-    _df['feat_Deal_owner'] = _df['Deal owner'].fillna("unknown")
-    _df['feat_Agent_of_AfA'] = _df['Agent of AfA/JC'].str.lower().fillna("unknown")
-    _df['feat_Deal_potential'] = _df['Deal potential'].fillna("unknown")
+    _df['feat_Deal_owner'] = _df['deal_owner'].fillna("unknown")
+    _df['feat_Agent_of_AfA'] = _df['agent_of_afa'].str.lower().fillna("unknown")
+    _df['feat_Deal_potential'] = _df['deal_potential'].fillna("unknown")
     
     return _df
 
 
 def agent_candidate_relations_features(_df):
     logger.info("Generating additional agent gender features.")
-    _df['feat_Agent_of_AfA'] = _df['Agent of AfA/JC'].apply(agent_changer)
+    
+    _df['feat_Agent_of_AfA'] = _df['feat_Agent_of_AfA'].apply(agent_changer)
     _df["feat_agent_gender"] = _df['feat_Agent_of_AfA'].apply(agent_gender)
     _df['feat_same_gender'] = _df[['feat_gender', "feat_agent_gender"]].apply(point_out_genders, axis=1)
     _df['feat_agent_is_known'] = _df['feat_Agent_of_AfA'].apply(agent_is_known)
@@ -295,54 +301,50 @@ def load_and_preprocess_data(new_data_file: str, names_file: str, deals_file: st
         A tuple of (processed DataFrame, tfidf vectorizer, tfidf matrix).
         :rtype: tuple
     """
-    logger.info("Loading data from file: %s", new_data_file)
-    try:
-        new_df = pd.read_csv(new_data_file, sep="\t", index_col='id')
-    except Exception as e:
-        logger.critical("Failed to load data from %s: %s", new_data_file, e)
-        raise
     
-    new_df = clean_column_names(new_df)
+    if 'df_tokenized_version_20250324_090957.pkl' not in os.listdir('interim_datasets'):
     
-    date_columns = ['requested_bg_date', 'createdate', 'mql_date', 'sql_date', 'bg_enrolled_date']
-    new_df = convert_date_columns(new_df, date_columns)
+        logger.info("Loading data from file: %s", new_data_file)
+        try:
+            new_df = pd.read_csv(new_data_file, sep="\t", index_col='id')
+        except Exception as e:
+            logger.critical("Failed to load data from %s: %s", new_data_file, e)
+            raise
+        
+        new_df = clean_column_names(new_df)
+        
+        date_columns = ['requested_bg_date', 'createdate', 'mql_date', 'sql_date', 'bg_enrolled_date']
+        new_df = convert_date_columns(new_df, date_columns)
+        
+        logger.debug("Starting preprocessing age ranges and employment information.")
+        df = preprocess_age_ranges(new_df)
+        df = one_line_features(df)
+        df = profile_completion_features(df)
+        df = langauge_features(df)
+        df = education_level_features(df)
+        df = marketing_related_features(df)
+        df = jc_advisor_status_features(df)
+        df = geographical_features(df)
+        df = preprocess_visa_status(df)
+        df = preprocess_datetime_columns_hour_minutes_features(df, 'mql_date')
+        df = inferring_features_from_names(df, names_file)
+        df = past_experience_features(df)
+        df = other_candidate_features(df)
+        
+        df.to_pickle("interim_datasets/1 - joined_df_with_locations.pkl")
+        df['why_do_you_want_to_start_a_career_in_tech'] = df['why_do_you_want_to_start_a_career_in_tech'].fillna("")
+        df[["tokenized_version", "detected_language"]] = df['why_do_you_want_to_start_a_career_in_tech'].apply(
+            lambda x: pd.Series(preprocess_text(x))
+        )
+    else:
+        df = pd.read_pickle('interim_datasets/df_tokenized_version_20250324_090957.pkl')
+        for n_com in (500,):
+            df, text_pipeline = get_text_tfidf_features(df, n_components=n_com, max_features=2500, save_files=False)
+            logger.debug("Extracting text features for career motivation.")
+            text_grades = extract_all_text_features(df['why_do_you_want_to_start_a_career_in_tech'])
+            with_grades = df.join(text_grades, how="inner")
+            df = with_grades.copy()
     
-    df = preprocess_age_ranges(new_df)
-    df = one_line_features(df)
-    df = profile_completion_features(df)
-    df = langauge_features(df)
-    df = education_level_features(df)
-    df = marketing_related_features(df)
-    df = jc_advisor_status_features(df)
-    df = geographical_features(df)
-    df = preprocess_visa_status(df)
-    df = preprocess_datetime_columns_hour_minutes_features(df, 'mql_date')
-    df = preprocess_datetime_columns_hour_minutes_features(df, 'sql_date')
-    df = inferring_features_from_names(df, names_file)
-    df = past_experience_features(df)
-    df = other_candidate_features(df)
-    
-    df.to_pickle("interim_datasets/1 - joined_df_with_locations.pkl")
-    
-    df[["tokenized_version", "detected_language"]] = df['why_do_you_want_to_start_a_career_in_tech'].apply(
-        lambda x: pd.Series(preprocess_text(x))
-    )
-    
-    df, text_pipeline = get_text_tfidf_features(df, n_components=50)
-    logger.debug("Extracting text features for career motivation.")
-    text_grades = extract_all_text_features(df['why_do_you_want_to_start_a_career_in_tech'])
-    with_grades = df.join(text_grades, how="inner")
-    df = with_grades.copy()
-
-    df.to_pickle("interim_datasets/2 - df_with_grades.pkl")
-    df = deals_related_features(df, deals_file)
-
-    df.to_pickle("interim_datasets/3 - df_with_deals.pkl")
-    df = agent_candidate_relations_features(df)
-    df = get_labels(df)
-
-    df.to_csv(f"training_data/preprocessed_50_new.tsv", sep="\t",  index_label="id")
-    logger.debug("Preprocessing complete. Returning final DataFrame.")
     return df, text_pipeline
 
 
@@ -351,7 +353,7 @@ if __name__ == '__main__':
     try:
         processed_df, tfidf_vectorizer = load_and_preprocess_data(new_data_file='new_data.tsv',
                                                                                 names_file='names.csv',
-                                                                                deals_file='all-deals.csv')
+                                                                                deals_file='all-deals.tsv')
         processed_df.to_csv("training_data/preprocessed_df.tsv", sep="\t", index_label="id")
         
         logger.info("Data loaded and preprocessed successfully. Here's a preview:")

@@ -1,14 +1,14 @@
 import nltk
 import numpy as np
-from langdetect import detect
-import string
 import pandas as pd
 import math
-import spacy
-import re
 import unicodedata
+import re
+import string
+from langdetect import detect
 import contractions
-from nltk.tokenize import word_tokenize, sent_tokenize
+import spacy
+import emoji
 from nltk.corpus import stopwords
 import emoji  # Optional for better emoji coverage
 
@@ -67,17 +67,17 @@ def extract_all_text_features(text_series, lang='en'):
     # Load appropriate spaCy model
     try:
         if lang == 'en':
-            nlp = spacy.load("en_core_web_md")
+            nlp = spacy.load("en_core_web_trf")
         elif lang == 'de':
-            nlp = spacy.load("de_core_news_sm")
+            nlp = spacy.load("de_dep_news_trf")
         else:
-            nlp = spacy.load("en_core_web_md")
+            nlp = spacy.load("en_core_web_trf")
     except OSError:
         print(f"spaCy model for language '{lang}' not found. Installing fallback model...")
         from spacy.cli import download
         try:
-            download("en_core_web_md")
-            nlp = spacy.load("en_core_web_md")
+            download("en_core_web_trf")
+            nlp = spacy.load("en_core_web_trf")
         except:
             print("Failed to download model. Using blank model instead.")
             nlp = spacy.blank("en")
@@ -255,9 +255,10 @@ def extract_all_text_features(text_series, lang='en'):
 
 
 # Emoji pattern
-def remove_emojis(text, replace_with=''):
+def remove_emojis(_text, replace_with=''):
     # Using `emoji` library for better coverage
-    return emoji.replace_emoji(text, replace_with)
+    return emoji.replace_emoji(_text, replace_with)
+
 
 
 # Remove accents
@@ -265,32 +266,34 @@ def remove_accents(text):
     return ''.join(c for c in unicodedata.normalize('NFD', text) if unicodedata.category(c) != 'Mn')
 
 
-# Text preprocessing function
-def preprocess_text(text_):
-    if pd.isna(text_):
-        return "", "en"
-    text_ = text_.lower()
+# Assuming remove_emojis and remove_accents are defined somewhere
+def preprocess_text(_text):
+    _text = _text.lower()
     
-    # Remove emojis, accents, punctuations and digits,excessive whitespaces,
-    # and Expand contractions (e.g., "I've" -> "I have")
-    text_ = remove_emojis(text_)
-    text_ = remove_accents(text_)
-    text_ = contractions.fix(text_)
-    text_ = re.sub(r'[\d' + string.punctuation + r']+', '', text_)
-    text_ = re.sub(r'\s+', ' ', text_).strip()
+    # Remove emojis, Remove accents, Expand contractions, Remove punctuations and digits, Remove excessive whitespaces
+    _text = remove_emojis(_text)
+    _text = remove_accents(_text)
+    _text = contractions.fix(_text)
+    _text = re.sub(r'[\d' + string.punctuation + r']+', '', _text)
+    _text = re.sub(r'\s+', ' ', _text).strip()
     
-    # Language detection
     try:
-        language = detect(text_)
+        language = detect(_text)
     except Exception:
         language = 'en'
     
+    # Truncate text to avoid exceeding model limits
+    _text = " ".join(_text.split())
+    
+    # Load appropriate spaCy model based on detected language
     nlp = nlp_de if language == 'de' else nlp_en
     
-    doc = nlp(text_)
+    # Tokenization and lemmatization in one step using spaCy
+    doc = nlp(_text)
     stop_words = set(stopwords.words('german') if language == 'de' else stopwords.words('english'))
-    tokens = [token.lemma_.lower() for token in doc if token.text.lower() not in stop_words]
     
+    tokens = [token.lemma_.lower() for token in doc if token.text.lower() not in stop_words]
+  
     return " ".join(tokens), language
 
 

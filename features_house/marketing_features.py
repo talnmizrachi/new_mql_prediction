@@ -64,6 +64,7 @@ def preprocess_utm_medium(medium_col):
     return "unknown"
 
 
+
 def preprocess_all_data_ad_name(dataframe):
     dataframe['ad_name'] = dataframe['ad_name'].str.lower().str.strip()
     pattern = re.compile(r'\[(?P<key>type|usp|prog|3s):(?P<value>[^\]]+)\]')

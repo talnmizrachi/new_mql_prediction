@@ -15,6 +15,12 @@ KNOWN_FEMALE_PATTERNS = [r"\bfrau\b"]
 KNOWN_MALE_PATTERNS = [r"\bherr{1,2}\b"]
 
 
+# Known agent exceptions for more scalable logic
+KNOWN_MALE_AGENTS = {"matthias höinghaus"}
+KNOWN_FEMALE_PATTERNS = [r"\bfrau\b"]
+KNOWN_MALE_PATTERNS = [r"\bherr{1,2}\b"]
+
+
 def agent_gender(agent):
     # Clean text for consistent processing
     agent = agent.strip().casefold()
@@ -48,4 +54,6 @@ def point_out_genders(cols):
     if 'unknown' in {feat_gender, feat_agent_gender}:
         return 'unable to determine'
     
+    # Efficient comparison
     return "same gender" if feat_gender == feat_agent_gender else "not the same"
+
